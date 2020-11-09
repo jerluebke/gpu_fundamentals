@@ -11,6 +11,6 @@ add_executable(vec_add main.cu)
 set_target_properties(vec_add PROPERTIES
     CMAKE_CXX_STANDARD 17
     CMAKE_CUDA_STANDARD 11
-    CUDA_ARCHITECTURES 50
+    CUDA_ARCHITECTURES 37
     CUDA_SEPERABLE_COMPILATION ON
 )

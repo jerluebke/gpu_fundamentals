@@ -11,6 +11,6 @@ add_executable(check_coords main.cu)
 set_target_properties(check_coords PROPERTIES
     CMAKE_CXX_STANDARD 17
     CMAKE_CUDA_STANDARD 11
-    CUDA_ARCHITECTURES 50
+    CUDA_ARCHITECTURES 37
     CUDA_SEPERABLE_COMPILATION ON
 )

@@ -9,6 +9,7 @@ check_language( CUDA )
 add_executable(mat_mul main.cu)
 
 # target_compile_options(mat_mul PRIVATE -Wall -pedantic)
+target_compile_options(mat_mul PRIVATE -g)
 
 set_target_properties(mat_mul PROPERTIES
     # CMAKE_CXX_STANDARD 17

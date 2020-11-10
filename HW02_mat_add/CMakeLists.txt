@@ -2,19 +2,21 @@ cmake_minimum_required( VERSION 3.18 )
 
 set( CMAKE_EXPORT_COMPILE_COMMANDS ON )
 
-project( mat_mul LANGUAGES CUDA C )
+project( mat_add LANGUAGES CUDA C )
 include( CheckLanguage )
 check_language( CUDA )
 
-add_executable(mat_mul main.cu)
+add_executable(mat_add main.cu)
 
-# target_compile_options(mat_mul PRIVATE -Wall -pedantic)
+target_include_directories(mat_add
+    PRIVATE /usr/local/cuda-10.0/samples/common/inc/
+)
+
 # target_compile_options(mat_mul PRIVATE -g)
 
-set_target_properties(mat_mul PROPERTIES
-    # CMAKE_CXX_STANDARD 17
+set_target_properties(mat_add PROPERTIES
     CMAKE_C_STANDARD 99
     CMAKE_CUDA_STANDARD 11
-    CUDA_ARCHITECTURES 50
+    CUDA_ARCHITECTURES 37
     CUDA_SEPERABLE_COMPILATION ON
 )

@@ -11,29 +11,38 @@ cudaError_t cudaConfigureCall(dim3, dim3, size_t=0, cudaStream_t=0);
 #include <float.h>
 
 
+/*****************************************************************************/
 
-const char* HEADER = "mat_add\n=======";
+
+const char* HEADER = "+=========+\n"
+                     "| mat_add |\n"
+                     "+=========+\n";
+const char* RESULT_1_START = "+--------------+\n"
+                             "| Task 2 and 3 |\n"
+                             "+--------------+\n"
+                             "gpu block size: %d x %d\n"
+                             "timing runs: %d\n"
+                             "(all times in ms)\n";
 const char* RESULT_1 = "matrix size: %d x %d\n"
-                       "gpu block size: %d x %d\n"
-                       "timing runs: %d\n"
-                       "\n"
-                       "Results (ms):\n"
                        "+------+--------+--------+--------+--------+\n"
                        "| mode | t_min  | t_max  | t_mean | t_std  |\n"
                        "+------+--------+--------+--------+--------|\n"
                        "| cpu  | %6.3f | %6.3f | %6.3f | %6.3f |\n"
                        "| gpu  | %6.3f | %6.3f | %6.3f | %6.3f |\n"
-                       "+------+--------+--------+--------+--------+\n"
-                       "\n";
-const char* NEW_ENTRY = "\n\n"
+                       "+------+--------+--------+--------+--------+\n";
+const char* NEW_ENTRY = "\n"
                         "+------------------------------------------+"
-                        "\n\n";
+                        "\n";
 
 const char* NEXT_TASK = "\n\n+===================================================+\n\n";
 
-const char* RESULT_2_START = "matrix size: %d x %d\n"
+const char* RESULT_2_START = "+--------+\n"
+                             "| Task 4 |\n"
+                             "+--------+\n"
+                             "matrix size: %d x %d\n"
                              "timing runs: %d\n"
                              "\n"
+                             "Results (ms):\n"
                              "+-------+--------+--------+--------+--------+-------+\n"
                              "| block | t_min  | t_max  | t_mean | t_std  | match |\n"
                              "+-------+--------+--------+--------+--------+-------+\n";
@@ -47,6 +56,14 @@ const char* RESULT_2_END = "+-------+--------+--------+--------+--------+-------
 
 enum Mode { CPU, GPU };
 
+/**
+ * \brief time measurement record.
+ * \var mode                CPU or GPU.
+ * \var runs                number of repetitions.
+ * \var block_x, block_y    GPU thread block size (irrelevant for mode == CPU).
+ * \var M, N                matrix block size.
+ * \var t_max, t_min, t_mean, t_std     timing statistics.
+ */
 typedef struct timing_result_s {
     Mode mode;
     unsigned runs;
@@ -54,7 +71,6 @@ typedef struct timing_result_s {
     size_t M, N;
     float t_max, t_min, t_mean, t_std;
 } timing_result_t;
-
 
 
 /**
@@ -65,7 +81,7 @@ typedef struct timing_result_s {
  */
 #define TIMEIT(Runs, Result, Code) \
     float t_max = 0.0, t_min = FLT_MAX, t_mean = 0.0, t_var = 0.0; \
-    for ( int timeit_idx = 0; timeit_idx < Runs; ++timeit_idx ) { \
+    for ( unsigned timeit_idx = 0; timeit_idx < Runs; ++timeit_idx ) { \
         static StopWatchInterface* timer = NULL; \
         sdkCreateTimer(&timer); \
         float t_start = sdkGetTimerValue(&timer); \
@@ -74,7 +90,7 @@ typedef struct timing_result_s {
         Code \
         \
         sdkStopTimer(&timer); \
-      	float t_diff = sdkGetTimerValue(&timer); \
+      	float t_diff = sdkGetTimerValue(&timer) - t_start; \
         float delta = t_diff - t_mean; \
         t_mean += delta / (timeit_idx + 1); \
         t_var += delta * (t_diff - t_mean); \
@@ -255,7 +271,7 @@ void matrix_print(const matrix_t mat, const char* name)
  * \param[out] timing_result result struct for time measurement
  */
 void mat_add_cpu(const matrix_t hA, const matrix_t hB, matrix_t hC,
-        const unsigned timing_runs, timing_result_t* timing_result)
+        const unsigned timing_runs = 1, timing_result_t* timing_result = NULL)
 {
     size_t size_A = hA.M * hA.N;
     size_t size_B = hB.M * hB.N;
@@ -281,7 +297,6 @@ __global__ void mat_add_kernel(const matrix_t dA, const matrix_t dB, matrix_t dC
     size_t row = blockIdx.y * blockDim.y + threadIdx.y;
     size_t col = blockIdx.x * blockDim.x + threadIdx.x;
 
-
     if ( row < dA.M && col < dA.N ) {
         float sum = matrix_get_d(dA, row, col) + matrix_get_d(dB, row, col);
         matrix_set_d(dC, row, col, sum);
@@ -300,7 +315,7 @@ __global__ void mat_add_kernel(const matrix_t dA, const matrix_t dB, matrix_t dC
  */
 void mat_add_gpu(const matrix_t hA, const matrix_t hB, matrix_t hC,
         const unsigned block_width, const unsigned block_height,
-        const unsigned timing_runs, timing_result_t* timing_result)
+        const unsigned timing_runs = 1, timing_result_t* timing_result = NULL)
 {
     assert(hA.M == hB.M && hB.M == hC.M);
     assert(hA.N == hB.N && hB.N == hC.N);
@@ -313,12 +328,14 @@ void mat_add_gpu(const matrix_t hA, const matrix_t hB, matrix_t hC,
     dim3 grid(dA.N / block_height + 1, dA.M / block_width + 1);
     dim3 block(block_height, block_width);
 
-    timing_result->mode = GPU;
-    timing_result->runs = timing_runs;
-    timing_result->M = hA.M;
-    timing_result->N = hA.N;
-    timing_result->block_x = block.x;
-    timing_result->block_y = block.y;
+    if ( timing_result != NULL ) {
+        timing_result->mode = GPU;
+        timing_result->runs = timing_runs;
+        timing_result->M = hA.M;
+        timing_result->N = hA.N;
+        timing_result->block_x = block.x;
+        timing_result->block_y = block.y;
+    }
 
     #define COMMA ,
     TIMEIT(timing_runs, timing_result,
@@ -345,9 +362,12 @@ int main()
 {
     srand(time(NULL));
 
+
+    /**********
+     * setup  *
+     **********/
     const int matrix_size_num = 5;
     const int block_size_num = 4;
-
     const int matrix_sizes[matrix_size_num][2] = {
         { 10, 10},
         { 100, 100},
@@ -366,24 +386,36 @@ int main()
     timing_result_t cpu_time, gpu_time;
     matrix_t hA, hB, hC, dC;
 
+
+    /************************************************
+     * comparing CPU and GPU execution times for    *
+     *  different matrix sizes (tasks 2, 3)         *
+     ************************************************/
     puts(HEADER);
+
+    int block_x = block_sizes[0][0];
+    int block_y = block_sizes[0][1];
+    printf(RESULT_1_START, block_x, block_y, timing_runs);
+    puts(NEW_ENTRY);
+
     for ( int i = 0; i < matrix_size_num; ++i ) {
         int M = matrix_sizes[i][0];
         int N = matrix_sizes[i][1];
-        int block_x = block_sizes[0][0];
-        int block_y = block_sizes[0][1];
         int size = M * N;
-
         new_matrix(&hA, M, N); new_matrix(&hB, M, N);
         new_matrix(&hC, M, N); new_matrix(&dC, M, N);
         init_data(hA.data, size); init_data(hB.data, size);
 
         mat_add_cpu(hA, hB, hC, timing_runs, &cpu_time);
         mat_add_gpu(hA, hB, dC, block_x, block_y, timing_runs, &gpu_time);
-        printf(RESULT_1, M, N, block_x, block_y, timing_runs,
-                         cpu_time.t_min, cpu_time.t_max, cpu_time.t_mean, cpu_time.t_std,
-                         gpu_time.t_min, gpu_time.t_max, gpu_time.t_mean, gpu_time.t_std);
+
+        printf(RESULT_1, M, N,
+               cpu_time.t_min, cpu_time.t_max,
+               cpu_time.t_mean, cpu_time.t_std,
+               gpu_time.t_min, gpu_time.t_max,
+               gpu_time.t_mean, gpu_time.t_std);
         check_results(hC.data, dC.data, size);
+
         if ( i < matrix_size_num-1 )
             puts(NEW_ENTRY);
 
@@ -391,6 +423,11 @@ int main()
         free_matrix(hC); free_matrix(dC);
     }
 
+
+    /********************************************
+     * comparing GPU execution times for        *
+     *  different thread block sizes (task 4)   *
+     ********************************************/
     puts(NEXT_TASK);
 
     int M = matrix_sizes[matrix_size_num-1][0];
@@ -413,6 +450,10 @@ int main()
                              match == 0 ? "Yes" : "No");
     }
     puts(RESULT_2_END);
+
+    free_matrix(hA); free_matrix(hB);
+    free_matrix(hC); free_matrix(dC);
+
 
     return 0;
 }

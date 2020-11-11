@@ -1,7 +1,3 @@
-#ifdef __clang__
-cudaError_t cudaConfigureCall(dim3, dim3, size_t=0, cudaStream_t=0);
-#endif
-
 #include <helper_cuda.h>
 #include <helper_timer.h>
 

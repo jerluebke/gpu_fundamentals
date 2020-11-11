@@ -378,7 +378,7 @@ int main()
         { 32, 32 },
     };
 
-    const int timing_runs = 100;
+    const int timing_runs = 10000;
     timing_result_t cpu_time, gpu_time;
     matrix_t hA, hB, hC, dC;
 
@@ -432,7 +432,7 @@ int main()
     new_matrix(&hA, M, N); new_matrix(&hB, M, N);
     new_matrix(&hC, M, N); new_matrix(&dC, M, N);
     init_data(hA.data, size); init_data(hB.data, size);
-    mat_add_cpu(hA, hB, hC, 1, NULL);
+    mat_add_cpu(hA, hB, hC);
 
     printf(RESULT_2_START, M, N, timing_runs);
     for ( int i = 0; i < block_size_num; ++i ) {

@@ -1,3 +1,10 @@
+/**
+ * \file main.cu
+ * \brief HW02, Fundamentals of GPU Programming: Comparing execution times for
+ *  matrix addition on CPU and GPU.
+ * \author Jeremiah Lübke
+ * \date 11.11.2020
+ */
 #ifdef __clang__
 cudaError_t cudaConfigureCall(dim3, dim3, size_t=0, cudaStream_t=0);
 #endif

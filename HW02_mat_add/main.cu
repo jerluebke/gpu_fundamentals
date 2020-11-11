@@ -4,6 +4,7 @@
  *  matrix addition on CPU and GPU.
  * \author Jeremiah Lübke
  * \date 11.11.2020
+ * \copyright MIT License
  */
 #include <helper_cuda.h>
 #include <helper_timer.h>

@@ -1,3 +1,10 @@
+/**
+ * \file main.cu
+ * \brief HW02, Fundamentals of GPU Programming: Comparing execution times for
+ *  matrix addition on CPU and GPU.
+ * \author Jeremiah Lübke
+ * \date 11.11.2020
+ */
 #include <helper_cuda.h>
 #include <helper_timer.h>
 

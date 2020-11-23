@@ -9,6 +9,7 @@
 #include <helper_cuda.h>
 #include <helper_timer.h>
 
+#include <float.h>
 #include <stdio.h>
 #include <time.h>
 
@@ -180,7 +181,8 @@ int main()
     printf(HEADER, TIMING_RUNS);
     for ( int i = 1; i <= 32; ++i ) {
         ilp_test(i*32, timing_results);
-        printf(RESULT_ROW, timing_results[0].t_mean / 16,
+        printf(RESULT_ROW, i*32,
+                           timing_results[0].t_mean / 16,
                            timing_results[1].t_mean / 8,
                            timing_results[2].t_mean / 4,
                            timing_results[3].t_mean);

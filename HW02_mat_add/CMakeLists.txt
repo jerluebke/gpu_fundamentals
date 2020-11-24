@@ -12,8 +12,6 @@ target_include_directories(mat_add
     PRIVATE C:/ProgramData/NVIDIA\ Corporation/CUDA\ Samples/v11.1/common/inc
 )
 
-# target_compile_options(mat_mul PRIVATE -g)
-
 set_target_properties(mat_add PROPERTIES
     CMAKE_C_STANDARD 99
     CMAKE_CUDA_STANDARD 11

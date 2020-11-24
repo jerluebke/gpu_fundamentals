@@ -12,7 +12,7 @@ target_include_directories(ilp
     PRIVATE C:/ProgramData/NVIDIA\ Corporation/CUDA\ Samples/v11.1/common/inc
 )
 
-target_compile_options(ilp PRIVATE -g)
+# target_compile_options(ilp PRIVATE -g)
 
 set_target_properties(ilp PROPERTIES
     CMAKE_C_STANDARD 99

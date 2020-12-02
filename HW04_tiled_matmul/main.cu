@@ -176,7 +176,7 @@ __global__ void matmul_shared_kernel(float* Md, float* Nd, float* Pd, size_t wid
         __syncthreads();
     }
 
-    if ( row < width && col << width )
+    if ( row < width && col < width )
         Pd[row*width+col] = p_value;
 }
 

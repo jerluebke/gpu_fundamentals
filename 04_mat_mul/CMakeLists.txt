@@ -12,9 +12,8 @@ add_executable(mat_mul main.cu)
 target_compile_options(mat_mul PRIVATE -g)
 
 set_target_properties(mat_mul PROPERTIES
-    # CMAKE_CXX_STANDARD 17
     CMAKE_C_STANDARD 99
     CMAKE_CUDA_STANDARD 11
-    CUDA_ARCHITECTURES 37
+    CUDA_ARCHITECTURES 50
     CUDA_SEPERABLE_COMPILATION ON
 )

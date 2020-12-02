@@ -22,7 +22,7 @@ void check_result(float* host_ref, float* gpu_ref, const int n)
                    "[%d] host: %5.2f\tgpu: %5.2f\n",
                    i, host_ref[i], gpu_ref[i]);
             return;
-        } 
+        }
     }
 
     printf("arrays match.\n");

@@ -69,7 +69,7 @@ typedef struct timing_result_s {
 
 
 const size_t TIMING_RUNS = 1000;
-const size_t NUM_ITERATIONS = 10000;
+const size_t NUM_ITERATIONS = 1 << 18;
 __device__ float GLOBAL_ARRAY[16*1024];
 
 
@@ -167,12 +167,12 @@ const char* HEADER = "+=====+\n"
                      "+=====+\n"
                      "timing runs: %d\n"
                      "\n"
-                     "Results (ms):\n"
-                     "+---------+-------+-------+-------+-------+\n"
-                     "| threads | ILP16 | ILP8  | ILP4  | ILP1  |\n"
-                     "+---------+-------+-------+-------+-------+\n";
-const char* RESULT_ROW = "| %7d | %5.3f | %5.3f | %5.3f | %5.3f |\n";
-const char* RESULT_END = "+---------+-------+-------+-------+-------+";
+                     "Mean time per %d instructions (in ms):\n"
+                     "+---------++-------+-------+-------+-------++-----+-----+-----+\n"
+                     "| threads || ILP16 | ILP8  | ILP4  | ILP1  || r16 | r8  | r4  |\n"
+                     "+---------++-------+-------+-------+-------++-----+-----+-----+\n";
+const char* RESULT_ROW = "| %7d || %5.3f | %5.3f | %5.3f | %5.3f || %3.1f | %3.1f | %3.1f |\n";
+const char* RESULT_END = "+---------++-------+-------+-------+-------++-----+-----+-----+";
 
 
 int main()
@@ -182,14 +182,14 @@ int main()
     const int ilp_config_number = 4;
     timing_result_t timing_results[ilp_config_number];
 
-    printf(HEADER, TIMING_RUNS);
+    printf(HEADER, TIMING_RUNS, NUM_ITERATIONS);
     for ( int i = 1; i <= 32; ++i ) {
         ilp_test(i*32, timing_results);
-        printf(RESULT_ROW, i*32,
-                           timing_results[0].t_mean / 16,
-                           timing_results[1].t_mean / 8,
-                           timing_results[2].t_mean / 4,
-                           timing_results[3].t_mean);
+        float t0 = timing_results[0].t_mean / 16;
+        float t1 = timing_results[1].t_mean / 8;
+        float t2 = timing_results[2].t_mean / 4;
+        float t3 = timing_results[3].t_mean;
+        printf(RESULT_ROW, i*32, t0, t1, t2, t3, t0 / t3, t1 / t3, t2 / t3);
     }
     puts(RESULT_END);
 

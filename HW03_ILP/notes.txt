@@ -1,0 +1,19 @@
+Notes
+-----
+
+The program ilp runs a number of simple floating point operations on the GPU,
+where the number of threads is increased from 32 to 1024 and the number of
+instructions per thread is varied from 16 to 1.
+
+The program outputs the mean time normalized to the number of instructions, and
+the ratio of runtime between multiple instructions per thread and one
+instruction per thread. The purpose of these ratios is to demonstrate the
+performance gain of ILP.
+
+For a small number of threads, many instructions per thread need only a
+fraction of time per instruction compared to only one instruction per thread,
+and more instructions yield more performance gain than fewer instructions (0.1
+to 0.3, except for 32 threads and ILP16 which consistently yields outliers).
+However for increasing number of threads, this gain and the difference between
+the number of instructions decreases (0.6 for >= 928 threads and all ILP
+configurations).

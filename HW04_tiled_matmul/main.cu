@@ -433,8 +433,12 @@ void check_device_properties(const size_t tile_shape[2])
     int max_shared_memory_per_sm;
     cudaDeviceGetAttribute(&max_threads_per_sm,
             cudaDevAttrMaxThreadsPerMultiProcessor, 0);
+#if 0
     cudaDeviceGetAttribute(&max_blocks_per_sm,
             cudaDevAttrMaxBlocksPerMultiprocessor, 0);
+#else
+    max_blocks_per_sm = 16;
+#endif
     cudaDeviceGetAttribute(&max_shared_memory_per_sm,
             cudaDevAttrMaxSharedMemoryPerMultiprocessor, 0);
 

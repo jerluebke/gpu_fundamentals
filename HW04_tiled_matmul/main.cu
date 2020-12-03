@@ -362,7 +362,7 @@ void matrix_print(const matrix_t mat, const char* name)
 
 
 
-void check_device_properties(const size_t tile_width);
+void check_device_properties(const size_t tile_shape[2]);
 
 int allocate_and_init_test_matrices(
         matrix_t test_matrices_h[4],
@@ -375,7 +375,7 @@ void free_test_matrices(matrix_t test_matrices_h[4],
 int perform_matmul_test(
         matrix_t test_matrices_h[4],
         matrix_t test_matrices_d[4],
-        const size_t tile_width,
+        const size_t tile_shape[2],
         timing_result_t timing_result[3],
         const size_t timing_runs);
 
@@ -384,10 +384,13 @@ int main()
 {
     srand(time(NULL));
 
-    const int tile_shape_count = 3;
+    const int tile_shape_count = 4;
     const int matrix_shape_count = 3;
-    const size_t tile_shapes[tile_shape_count] = {
-        8, 16, 32
+    const size_t tile_shapes[tile_shape_count][2] = {
+        {  8,  8 },
+        {  8, 16 },
+        { 16, 16 },
+        { 16, 32 },
     };
     // matrix_shape_ij, N_jk
     const size_t matrix_shapes[matrix_shape_count][3] = {
@@ -424,7 +427,7 @@ int main()
 
 
 
-void check_device_properties(const size_t tile_width)
+void check_device_properties(const size_t tile_shape[2])
 {
     /*
         max_thr_per_sm / blk_size <= max_blk_per_sm
@@ -441,7 +444,7 @@ void check_device_properties(const size_t tile_width)
     cudaDeviceGetAttribute(&max_shared_memory_per_sm,
             cudaDevAttrMaxSharedMemoryPerMultiprocessor, 0);
 
-    int block_size = tile_width * tile_width;
+    int block_size = tile_shape[0] * tile_shape[1];
     int number_of_blocks_by_threads = max_threads_per_sm / block_size;
     int number_of_blocks_by_shared_mem = max_shared_memory_per_sm \
         / (2*block_size*sizeof(float));
@@ -449,12 +452,12 @@ void check_device_properties(const size_t tile_width)
     if ( number_of_blocks_by_threads > max_blocks_per_sm )
         fprintf(stderr, "WARNING: block configuration %zux%zu allows %d blocks, "
                 "but only %d are available on the multiprocessors!\n",
-                tile_width, tile_width, number_of_blocks_by_threads,
+                tile_shape[0], tile_shape[1], number_of_blocks_by_threads,
                 max_blocks_per_sm);
     if ( number_of_blocks_by_shared_mem < max_blocks_per_sm )
         fprintf(stderr, "WARNING: block configuration %zux%zu allows only %d "
                 "blocks, but %d are available on the multiprocessors!\n",
-                tile_width, tile_width, number_of_blocks_by_shared_mem,
+                tile_shape[0], tile_shape[1], number_of_blocks_by_shared_mem,
                 max_blocks_per_sm);
 }
 
@@ -521,16 +524,16 @@ __global__ void mat_mul_global_kernel(matrix_t dA, matrix_t dB, matrix_t dC)
 
 
 __global__ void mat_mul_shared_kernel(matrix_t dA, matrix_t dB, matrix_t dC,
-        const size_t tile_width)
+        const size_t tile_width, const size_t tile_height)
 {
     extern __shared__ float smem[];
-    matrix_t dAs = { tile_width, tile_width, smem };
-    matrix_t dBs = { tile_width, tile_width,
-                     &smem[tile_width*tile_width] };
+    matrix_t dAs = { tile_height, tile_width, smem };
+    matrix_t dBs = { tile_width, tile_height,
+                     &smem[tile_width*tile_height] };
 
     size_t bx = blockIdx.x, by = blockIdx.y;
     size_t tx = threadIdx.x, ty = threadIdx.y;
-    size_t row = by * tile_width + ty;
+    size_t row = by * tile_height + ty;
     size_t col = bx * tile_width + tx;
 
     float sum = 0.0;
@@ -555,7 +558,7 @@ __global__ void mat_mul_shared_kernel(matrix_t dA, matrix_t dB, matrix_t dC,
 int perform_matmul_test(
         matrix_t test_matrices_h[4],
         matrix_t test_matrices_d[4],
-        const size_t tile_width,
+        const size_t tile_shape[2],
         timing_result_t timing_result[3],
         const size_t timing_runs)
 {
@@ -568,12 +571,13 @@ int perform_matmul_test(
     matrix_t dCg = test_matrices_d[2];
     matrix_t dCs = test_matrices_d[3];
 
-    size_t tile_size = tile_width * tile_width * sizeof(float);
-    dim3 block(tile_width, tile_width);
-    dim3 grid(hC.N / tile_width + 1, hC.M / tile_width + 1);
+    size_t tile_size = tile_shape[0] * tile_shape[1] * sizeof(float);
+    dim3 block(tile_shape[0], tile_shape[1]);
+    dim3 grid(hC.N / tile_shape[0] + 1, hC.M / tile_shape[1] + 1);
 
     mat_mul_cpu(hA, hB, hC);
-    mat_mul_shared_kernel<<<grid, block, 2*tile_size>>>(dA, dB, dCs, tile_width);
+    mat_mul_shared_kernel<<<grid, block, 2*tile_size>>>(dA, dB, dCs,
+            tile_shape[0], tile_shape[1]);
     cudaDeviceSynchronize();
 
 

@@ -357,7 +357,7 @@ void matrix_print(const matrix_t mat, const char* name)
 
 
 
-void check_device_properties(const size_t tile_shape[2]);
+void check_device_properties(const size_t tile_width);
 
 int allocate_and_init_test_matrices(
         matrix_t test_matrices_h[4],
@@ -370,7 +370,7 @@ void free_test_matrices(matrix_t test_matrices_h[4],
 int perform_matmul_test(
         matrix_t test_matrices_h[4],
         matrix_t test_matrices_d[4],
-        const size_t tile_shape[2],
+        const size_t tile_width,
         timing_result_t timing_result[3],
         const size_t timing_runs);
 
@@ -381,14 +381,9 @@ int main()
     // srand(1);
 
     const int tile_shape_count = 3;
-    const int matrix_shape_count = 4;
-    const size_t tile_shapes[tile_shape_count][2] = {
-        // { 4, 4},
-        {  8,  8 },
-        // {  8, 16 },
-        { 16, 16 },
-        // { 16, 32 },
-        { 32, 32 },
+    const int matrix_shape_count = 3;
+    const size_t tile_shapes[tile_shape_count] = {
+        8, 16, 32
     };
     // matrix_shape_ij, N_jk
     const size_t matrix_shapes[matrix_shape_count][3] = {
@@ -396,7 +391,7 @@ int main()
         {  300,  100,  500 },
         {  600,  200, 1000 },
         { 1200,  400, 2000 },
-        { 2400,  800, 4000 },
+        // { 2400,  800, 4000 },
         // { 3000, 1000, 5000 },
         /* { 4800, 1600, 8000 }, */
     };
@@ -406,9 +401,9 @@ int main()
     matrix_t test_matrices_h[4];
     matrix_t test_matrices_d[4];
 
-    /* for ( int j = 0; j < tile_shape_count; ++j ) {
+    for ( int j = 0; j < tile_shape_count; ++j ) {
         check_device_properties(tile_shapes[j]);
-    } */
+    }
 
     for ( int i = 0; i < matrix_shape_count; ++i ) {
         allocate_and_init_test_matrices(
@@ -421,42 +416,12 @@ int main()
     }
 
 
-#if 0
-    size_t width = 1<<10;
-    float *Mh, *Nh, *Ph, *Pg, *Ps;
-    Mh = (float*)malloc(width*width*sizeof(float));
-    Nh = (float*)malloc(width*width*sizeof(float));
-    Ph = (float*)malloc(width*width*sizeof(float));
-    Pg = (float*)malloc(width*width*sizeof(float));
-    Ps = (float*)malloc(width*width*sizeof(float));
-    if ( Mh == NULL || Nh == NULL || Ph == NULL || Pg == NULL || Ps == NULL ) {
-        fprintf(stderr, "malloc failed.\n");
-        return EXIT_FAILURE;
-    }
-
-    init_data(Mh, width*width);
-    init_data(Nh, width*width);
-
-    matmul_cpu(Mh, Nh, Ph, width);
-    matmul_gpu_global(Mh, Nh, Pg, width);
-    matmul_gpu_shared(Mh, Nh, Ps, width);
-
-    check_results(Ph, Pg, width*width);
-    check_results(Ph, Ps, width*width);
-
-    free(Mh);
-    free(Nh);
-    free(Ph);
-    free(Pg);
-    free(Ps);
-#endif
-
     return EXIT_SUCCESS;
 }
 
 
 
-void check_device_properties(const size_t tile_shape[2])
+void check_device_properties(const size_t tile_width)
 {
     /*
         max_thr_per_sm / blk_size <= max_blk_per_sm
@@ -468,12 +433,16 @@ void check_device_properties(const size_t tile_shape[2])
     int max_shared_memory_per_sm;
     cudaDeviceGetAttribute(&max_threads_per_sm,
             cudaDevAttrMaxThreadsPerMultiProcessor, 0);
+#if 0
     cudaDeviceGetAttribute(&max_blocks_per_sm,
-            (cudaDeviceAttr)106, 0);
+            cudaDevAttrMaxBlocksPerMultiprocessor, 0);
+#else
+    max_blocks_per_sm = 16;
+#endif
     cudaDeviceGetAttribute(&max_shared_memory_per_sm,
             cudaDevAttrMaxSharedMemoryPerMultiprocessor, 0);
 
-    int block_size = tile_shape[0] * tile_shape[1];
+    int block_size = tile_width * tile_width;
     int number_of_blocks_by_threads = max_threads_per_sm / block_size;
     int number_of_blocks_by_shared_mem = max_shared_memory_per_sm \
         / (2*block_size*sizeof(float));
@@ -481,12 +450,12 @@ void check_device_properties(const size_t tile_shape[2])
     if ( number_of_blocks_by_threads > max_blocks_per_sm )
         fprintf(stderr, "WARNING: block configuration %zux%zu allows %d blocks, "
                 "but only %d are available on the multiprocessors!\n",
-                tile_shape[0], tile_shape[1], number_of_blocks_by_threads,
+                tile_width, tile_width, number_of_blocks_by_threads,
                 max_blocks_per_sm);
     if ( number_of_blocks_by_shared_mem < max_blocks_per_sm )
         fprintf(stderr, "WARNING: block configuration %zux%zu allows only %d "
                 "blocks, but %d are available on the multiprocessors!\n",
-                tile_shape[0], tile_shape[1], number_of_blocks_by_shared_mem,
+                tile_width, tile_width, number_of_blocks_by_shared_mem,
                 max_blocks_per_sm);
 }
 
@@ -553,29 +522,28 @@ __global__ void mat_mul_global_kernel(matrix_t dA, matrix_t dB, matrix_t dC)
 
 
 __global__ void mat_mul_shared_kernel(matrix_t dA, matrix_t dB, matrix_t dC,
-        const size_t tile_size)
+        const size_t tile_width)
 {
     extern __shared__ float smem[];
-    matrix_t dAs = { tile_size, tile_size, smem };
-    matrix_t dBs = { tile_size, tile_size,
-                     &smem[tile_size*tile_size] };
+    matrix_t dAs = { tile_width, tile_width, smem };
+    matrix_t dBs = { tile_width, tile_width,
+                     &smem[tile_width*tile_width] };
 
     size_t bx = blockIdx.x, by = blockIdx.y;
     size_t tx = threadIdx.x, ty = threadIdx.y;
-    size_t row = by * tile_size + ty;
-    size_t col = bx * tile_size + tx;
+    size_t row = by * tile_width + ty;
+    size_t col = bx * tile_width + tx;
 
     float sum = 0.0;
 
-    for ( size_t m = 0; m < dA.N / tile_size + 1; ++m ) {
-    // for ( size_t m = 0; m < (dC.N+tile_size-1)/tile_size; ++m ) {
+    for ( size_t m = 0; m < dA.N / tile_width + 1; ++m ) {
         // collaborative loading of tiles into shared memory
         // matrix_* functions take care of bounds checking
-        matrix_set(dAs, ty, tx, matrix_get(dA, row, m*tile_size+tx));
-        matrix_set(dBs, ty, tx, matrix_get(dB, m*tile_size+ty, col));
+        matrix_set(dAs, ty, tx, matrix_get(dA, row, m*tile_width+tx));
+        matrix_set(dBs, ty, tx, matrix_get(dB, m*tile_width+ty, col));
         __syncthreads();
 
-        for ( size_t k = 0; k < tile_size; ++k )
+        for ( size_t k = 0; k < tile_width; ++k )
             sum += matrix_get(dAs, ty, k) * matrix_get(dBs, k, tx);
         __syncthreads();
     }
@@ -588,7 +556,7 @@ __global__ void mat_mul_shared_kernel(matrix_t dA, matrix_t dB, matrix_t dC,
 int perform_matmul_test(
         matrix_t test_matrices_h[4],
         matrix_t test_matrices_d[4],
-        const size_t tile_shape[2],
+        const size_t tile_width,
         timing_result_t timing_result[3],
         const size_t timing_runs)
 {
@@ -601,12 +569,12 @@ int perform_matmul_test(
     matrix_t dCg = test_matrices_d[2];
     matrix_t dCs = test_matrices_d[3];
 
-    size_t tile_size = tile_shape[0] * tile_shape[1] * sizeof(float);
-    dim3 block(tile_shape[0], tile_shape[1]);
-    dim3 grid(hC.N / tile_shape[0] + 1, hC.M / tile_shape[1] + 1);
+    size_t tile_size = tile_width * tile_width * sizeof(float);
+    dim3 block(tile_width, tile_width);
+    dim3 grid(hC.N / tile_width + 1, hC.M / tile_width + 1);
 
     mat_mul_cpu(hA, hB, hC);
-    mat_mul_shared_kernel<<<grid, block, 2*tile_size>>>(dA, dB, dCs, tile_shape[0]);
+    mat_mul_shared_kernel<<<grid, block, 2*tile_size>>>(dA, dB, dCs, tile_width);
     cudaDeviceSynchronize();
 
 
@@ -618,7 +586,7 @@ int perform_matmul_test(
             cudaDeviceSynchronize();)
     TIMEIT(timing_runs, (&timing_result[2]),
             mat_mul_shared_kernel<<<grid COMMA block COMMA 2*tile_size>>>(
-                dA COMMA dB COMMA dCs COMMA tile_shape);
+                dA COMMA dB COMMA dCs COMMA tile_width);
             cudaDeviceSynchronize();)
 #undef COMMA
 

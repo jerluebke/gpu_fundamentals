@@ -12,7 +12,7 @@ target_include_directories(tiled_mat_mul
     PRIVATE /usr/local/cuda-10.0/samples/common/inc/
 )
 
-target_compile_options(tiled_mat_mul PRIVATE -G -g)
+# target_compile_options(tiled_mat_mul PRIVATE -G -g)
 
 set_target_properties(tiled_mat_mul PROPERTIES
     CMAKE_C_STANDARD 99

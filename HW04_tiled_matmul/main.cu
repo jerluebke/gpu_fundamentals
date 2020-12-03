@@ -491,7 +491,7 @@ int main()
         /* { 4800, 1600, 8000 }, */
     };
 
-    const size_t timing_runs[2] = { 0, 1000 };
+    const size_t timing_runs[2] = { 1, 1000 };
     timing_result_t timing_results[3*matrix_shape_count*tile_shape_count];
     matrix_t test_matrices_h[4];
     matrix_t test_matrices_d[4];

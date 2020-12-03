@@ -1,0 +1,21 @@
+Notes
+-----
+
+The program tiled_mat_mul compares three algorithms for matrix multiplication:
+ 1. CPU, Naive
+ 2. GPU, Naive, using global memory
+ 3. GPU, Tiled, using shared memory
+
+The algorithms are tested for different matrix sizes and different tile/block
+sizes. The CPU code is executed only for small matrix sizes and for only one
+tile size (by which it isn't affected).
+
+Both GPU codes performs significantly faster than the CPU code, which is mainly
+used to varify the correctness of the resulting matrix. The shared code
+performs faster than the global code for all configurations (s/g < 1) and the
+gain increases clearly with increasing matrix sizes, which reflects the
+performance restriction due to limited memory bandwidth of the global memory.
+The optimal tile size is 8x16, except for the intermediate matrix sizes
+(1200x400) and (400x2000). The slightly lower gain of the tile size 8x8
+probably results from the fact, that this configuration does not achieve full
+occupancy on the employed hardware.

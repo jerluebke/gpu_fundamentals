@@ -81,7 +81,7 @@ bool check_results(float* host_ref, float* gpu_ref, const size_t n,
     return true;
 }
 
-__host__ __device__
+__host__ //__device__
 void init_data(float* ip, size_t size)
 {
     for ( size_t i = 0; i < size; ++i )
@@ -378,34 +378,37 @@ int perform_matmul_test(
 int main()
 {
     srand(time(NULL));
+    // srand(1);
 
-    const int tile_shape_count = 5;
-    const int matrix_shape_count = 6;
+    const int tile_shape_count = 3;
+    const int matrix_shape_count = 4;
     const size_t tile_shapes[tile_shape_count][2] = {
+        // { 4, 4},
         {  8,  8 },
-        {  8, 16 },
+        // {  8, 16 },
         { 16, 16 },
         // { 16, 32 },
-        // { 32, 32 },
+        { 32, 32 },
     };
     // matrix_shape_ij, N_jk
     const size_t matrix_shapes[matrix_shape_count][3] = {
+        // { 9, 8, 14 },
         {  300,  100,  500 },
         {  600,  200, 1000 },
         { 1200,  400, 2000 },
         { 2400,  800, 4000 },
-        { 3000, 1000, 5000 },
-        { 4800, 1600, 8000 },
+        // { 3000, 1000, 5000 },
+        /* { 4800, 1600, 8000 }, */
     };
 
-    const size_t timing_runs = 1000;
+    const size_t timing_runs = 10;
     timing_result_t timing_results[3*matrix_shape_count*tile_shape_count];
     matrix_t test_matrices_h[4];
     matrix_t test_matrices_d[4];
 
-    for ( int j = 0; j < tile_shape_count; ++j ) {
+    /* for ( int j = 0; j < tile_shape_count; ++j ) {
         check_device_properties(tile_shapes[j]);
-    }
+    } */
 
     for ( int i = 0; i < matrix_shape_count; ++i ) {
         allocate_and_init_test_matrices(
@@ -466,7 +469,7 @@ void check_device_properties(const size_t tile_shape[2])
     cudaDeviceGetAttribute(&max_threads_per_sm,
             cudaDevAttrMaxThreadsPerMultiProcessor, 0);
     cudaDeviceGetAttribute(&max_blocks_per_sm,
-            cudaDevAttrMaxBlocksPerMultiprocessor, 0);
+            (cudaDeviceAttr)106, 0);
     cudaDeviceGetAttribute(&max_shared_memory_per_sm,
             cudaDevAttrMaxSharedMemoryPerMultiprocessor, 0);
 
@@ -550,28 +553,29 @@ __global__ void mat_mul_global_kernel(matrix_t dA, matrix_t dB, matrix_t dC)
 
 
 __global__ void mat_mul_shared_kernel(matrix_t dA, matrix_t dB, matrix_t dC,
-        const size_t tile_shape[2])
+        const size_t tile_size)
 {
     extern __shared__ float smem[];
-    matrix_t dAs = { tile_shape[0], tile_shape[1], smem };
-    matrix_t dBs = { tile_shape[1], tile_shape[0],
-                     &smem[tile_shape[0]*tile_shape[1]] };
+    matrix_t dAs = { tile_size, tile_size, smem };
+    matrix_t dBs = { tile_size, tile_size,
+                     &smem[tile_size*tile_size] };
 
     size_t bx = blockIdx.x, by = blockIdx.y;
     size_t tx = threadIdx.x, ty = threadIdx.y;
-    size_t row = by * tile_shape[0] + ty;
-    size_t col = bx * tile_shape[1] + tx;
+    size_t row = by * tile_size + ty;
+    size_t col = bx * tile_size + tx;
 
     float sum = 0.0;
 
-    for ( size_t m = 0; m < dA.N / dAs.N + 1; ++m ) {
+    for ( size_t m = 0; m < dA.N / tile_size + 1; ++m ) {
+    // for ( size_t m = 0; m < (dC.N+tile_size-1)/tile_size; ++m ) {
         // collaborative loading of tiles into shared memory
         // matrix_* functions take care of bounds checking
-        matrix_set(dAs, ty, tx, matrix_get(dA, row, m*dAs.N+tx));
-        matrix_set(dBs, tx, ty, matrix_get(dB, m*dBs.M+ty, col));
+        matrix_set(dAs, ty, tx, matrix_get(dA, row, m*tile_size+tx));
+        matrix_set(dBs, ty, tx, matrix_get(dB, m*tile_size+ty, col));
         __syncthreads();
 
-        for ( size_t k = 0; k < dAs.N; ++k )
+        for ( size_t k = 0; k < tile_size; ++k )
             sum += matrix_get(dAs, ty, k) * matrix_get(dBs, k, tx);
         __syncthreads();
     }
@@ -599,8 +603,14 @@ int perform_matmul_test(
 
     size_t tile_size = tile_shape[0] * tile_shape[1] * sizeof(float);
     dim3 block(tile_shape[0], tile_shape[1]);
-    dim3 grid(hC.M / tile_shape[0] + 1, hC.N / tile_shape[1] + 1);
+    dim3 grid(hC.N / tile_shape[0] + 1, hC.M / tile_shape[1] + 1);
 
+    mat_mul_cpu(hA, hB, hC);
+    mat_mul_shared_kernel<<<grid, block, 2*tile_size>>>(dA, dB, dCs, tile_shape[0]);
+    cudaDeviceSynchronize();
+
+
+#if 0
 #define COMMA ,
     TIMEIT(timing_runs, (&timing_result[0]), mat_mul_cpu(hA COMMA hB COMMA hC);)
     TIMEIT(timing_runs, (&timing_result[1]),
@@ -618,6 +628,7 @@ int perform_matmul_test(
         return -1;
     }
     check_results(hC.data, Cref.data, hC.M*hC.N);
+#endif
 
     if ( cudaMemcpy(Cref.data, dCs.data, Cref.M*Cref.N*sizeof(float),
                 cudaMemcpyDeviceToHost) != cudaSuccess ) {
@@ -625,6 +636,13 @@ int perform_matmul_test(
         return -1;
     }
     check_results(hC.data, Cref.data, hC.M*hC.N);
+
+
+    /* matrix_print(hA, "A");
+    matrix_print(hB, "B");
+    matrix_print(hC, "C");
+    matrix_print(Cref, "dCs"); */
+
 
     return 0;
 }

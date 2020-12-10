@@ -21,8 +21,6 @@ __device__ void __syncthreads();
 #include <time.h>
 
 
-#define SUBMISSION 0
-
 
 /*****************************************************************************
  * UTILITY                                                                   *
@@ -110,22 +108,25 @@ const int BLOCK_ROWS = 8;
 const int REPETITIONS = 1000;
 
 
-__host__ void transpose_cpu(float *odata, float *idata, int width, int height)
+void transpose_cpu(float *odata, float *idata, int width, int height)
 {
-    for ( int i = 0; i < height ; ++i )
-        for ( int j = 0; j < width ; ++j )
-            odata[j*height+i] = idata[i*width+j];
+    for ( int r = 0; r < REPETITIONS; ++r ) {
+        for ( int i = 0; i < height ; ++i )
+            for ( int j = 0; j < width ; ++j )
+                odata[j*height+i] = idata[i*width+j];
+    }
 }
 
 
-__global__ void copy_kernel(float *odata, float *idata, int width)
+__global__ void copy_kernel(float *odata, float *idata, int width, int height)
 {
     int x_idx = blockIdx.x * TILE_DIM + threadIdx.x;
     int y_idx = blockIdx.y * TILE_DIM + threadIdx.y;
     int idx = x_idx + width * y_idx;
     for ( int r = 0; r < REPETITIONS; ++r ) {
         for ( int i = 0; i < TILE_DIM; i += BLOCK_ROWS ) {
-            odata[idx+i*width] = idata[idx+i*width];
+            if ( idx+i*width < width * height )
+                odata[idx+i*width] = idata[idx+i*width];
         }
     }
 }
@@ -140,7 +141,8 @@ __global__ void transpose_naive_kernel(
     int idx_out = y_idx + height * x_idx;
     for ( int r = 0; r < REPETITIONS; ++r ) {
         for ( int i = 0; i < TILE_DIM; i += BLOCK_ROWS ) {
-            odata[idx_out+i] = idata[idx_in+i*width];
+            if ( y_idx+i < height && x_idx < width )
+                odata[idx_out+i] = idata[idx_in+i*width];
         }
     }
 }
@@ -153,15 +155,17 @@ __global__ void transpose_coalesced(
     int x_idx = blockIdx.x * TILE_DIM + threadIdx.x;
     int y_idx = blockIdx.y * TILE_DIM + threadIdx.y;
     int idx_in = x_idx + width * y_idx;
-    x_idx = blockIdx.y * TILE_DIM + threadIdx.x;
-    y_idx = blockIdx.x * TILE_DIM + threadIdx.y;
-    int idx_out = x_idx + height * y_idx;
+    int x_idx_t = blockIdx.y * TILE_DIM + threadIdx.x;
+    int y_idx_t = blockIdx.x * TILE_DIM + threadIdx.y;
+    int idx_out = x_idx_t + height * y_idx_t;
     for ( int r = 0; r < REPETITIONS; ++r ) {
         for ( int i = 0; i < TILE_DIM; i += BLOCK_ROWS )
-            tile[threadIdx.y+i][threadIdx.x] = idata[idx_in+i*width];
+            if ( y_idx+i < height && x_idx < width )
+                tile[threadIdx.y+i][threadIdx.x] = idata[idx_in+i*width];
         __syncthreads();
         for ( int i = 0; i < TILE_DIM; i += BLOCK_ROWS )
-            odata[idx_out+i*height] = tile[threadIdx.x][threadIdx.y+i];
+            if ( y_idx_t+i < width && x_idx_t <  height )
+                odata[idx_out+i*height] = tile[threadIdx.x][threadIdx.y+i];
     }
 }
 
@@ -173,20 +177,29 @@ __global__ void transpose_coalesced_no_bank_conflict(
     int x_idx = blockIdx.x * TILE_DIM + threadIdx.x;
     int y_idx = blockIdx.y * TILE_DIM + threadIdx.y;
     int idx_in = x_idx + width * y_idx;
-    x_idx = blockIdx.y * TILE_DIM + threadIdx.x;
-    y_idx = blockIdx.x * TILE_DIM + threadIdx.y;
-    int idx_out = x_idx + height * y_idx;
+    int x_idx_t = blockIdx.y * TILE_DIM + threadIdx.x;
+    int y_idx_t = blockIdx.x * TILE_DIM + threadIdx.y;
+    int idx_out = x_idx_t + height * y_idx_t;
     for ( int r = 0; r < REPETITIONS; ++r ) {
-        for ( int i = 0; i < TILE_DIM; i += BLOCK_ROWS )
-            tile[threadIdx.y+i][threadIdx.x] = idata[idx_in+i*width];
+       for ( int i = 0; i < TILE_DIM; i += BLOCK_ROWS )
+            if ( y_idx+i < height && x_idx < width )
+                tile[threadIdx.y+i][threadIdx.x] = idata[idx_in+i*width];
         __syncthreads();
         for ( int i = 0; i < TILE_DIM; i += BLOCK_ROWS )
-            odata[idx_out+i*height] = tile[threadIdx.x][threadIdx.y+i];
+            if ( y_idx_t+i < width && x_idx_t <  height )
+                odata[idx_out+i*height] = tile[threadIdx.x][threadIdx.y+i];
     }
 }
 
 
 /*****************************************************************************/
+
+
+float bandwidth_from_time(int size, float time)
+{
+    return (2 * size * sizeof(float) * REPETITIONS) \
+           / ((float)(1<<30)) / (1e-3*time);
+}
 
 
 void do_benchmark(timing_result_t timing_results[5])
@@ -205,18 +218,18 @@ void do_benchmark(timing_result_t timing_results[5])
     dim3 block(TILE_DIM, BLOCK_ROWS);
     dim3 grid(MATRIX_WIDTH / TILE_DIM + 1, MATRIX_HEIGHT / TILE_DIM + 1);
 
-    copy_kernel<<<grid, block>>>(dOut, dIn, MATRIX_WIDTH);
+    /* copy_kernel<<<grid, block>>>(dOut, dIn, MATRIX_WIDTH, MATRIX_HEIGHT);
     cudaDeviceSynchronize();
     cudaMemcpy(refOut, dOut, size, cudaMemcpyDeviceToHost);
-    check_results(hIn, refOut, MATRIX_WIDTH*MATRIX_HEIGHT);
+    check_results(hIn, refOut, MATRIX_WIDTH*MATRIX_HEIGHT); */
 
-#if 0
 #define COMMA ,
     TIMEIT(1, (&timing_results[0]),
         transpose_cpu(hOut, hIn, MATRIX_WIDTH, MATRIX_HEIGHT);)
 
     TIMEIT(1, (&timing_results[1]),
-        copy_kernel<<<grid COMMA block>>>(dOut, dIn, MATRIX_WIDTH);
+        copy_kernel<<<grid COMMA block>>>(
+                dOut, dIn, MATRIX_WIDTH, MATRIX_HEIGHT);
         cudaDeviceSynchronize();)
     cudaMemcpy(refOut, dOut, size, cudaMemcpyDeviceToHost);
     check_results(hIn, refOut, MATRIX_WIDTH*MATRIX_HEIGHT);
@@ -242,7 +255,6 @@ void do_benchmark(timing_result_t timing_results[5])
     cudaMemcpy(refOut, dOut, size, cudaMemcpyDeviceToHost);
     check_results(hOut, refOut, MATRIX_WIDTH*MATRIX_HEIGHT);
 #undef COMMA
-#endif
 
     free(hIn);
     free(hOut);
@@ -256,11 +268,32 @@ void do_benchmark(timing_result_t timing_results[5])
 /*****************************************************************************/
 
 
+const char* HEADER = "+===========+\n"
+                     "| TRANSPOSE |\n"
+                     "+===========+\n";
+const char* ALGORITHM[5] = {
+    "cpu_transpose:             %6.2f GB/s, %6.2f %%\n",
+    "gpu_copy:                  %6.2f GB/s, %6.2f %%\n",
+    "gpu_transpose_naive:       %6.2f GB/s, %6.2f %%\n",
+    "gpu_transpose_coalesced:   %6.2f GB/s, %6.2f %%\n",
+    "gpu_transpose_coal_padded: %6.2f GB/s, %6.2f %%\n"
+};
+
+
 int main()
 {
     srand(time(NULL));
     timing_result_t timing_results[5];
     do_benchmark(timing_results);
+    float peak = bandwidth_from_time(MATRIX_WIDTH*MATRIX_HEIGHT,
+                                     timing_results[4].t_mean);
+
+    puts("\n"); puts(HEADER);
+    for ( int i = 0; i < 5; ++i ) {
+        float bandwidth_i = bandwidth_from_time(MATRIX_WIDTH*MATRIX_HEIGHT,
+                                                timing_results[i].t_mean);
+        printf(ALGORITHM[i], bandwidth_i, bandwidth_i / peak * 100.0);
+    }
 }
 
 

@@ -1,0 +1,34 @@
+Notes
+-----
+
+The program transpose compares naive matrix copying on the GPU with
+global memory and four algorithms for matrix transposition:
+ 1. CPU, Naive
+ 2. GPU, Naive, using global memory
+ 3. GPU, Tiled, using shared memory
+ 3. GPU, Tiled, using shared memory with padding
+
+The algorithms are tested on a 1000x5000 matrix with random entries
+and the timing is averaged over 1000 runs, where the repetitions are
+done within the kernels to exclude kernel launch time from the
+measurements.
+
+In agreement with the previous homework, the naive GPU implementation
+performs significantly faster than the reference CPU implementation,
+but still lacks strongly behind the versions with shared memory. The
+striking difference to the GPU copy algorithm, which also only uses
+global memory, results from the memory access being coalesced with the
+latter, which is not the case for the former.
+
+Using shared memory to ensure coalesced memory access yields some
+performance gain, but still doesn't reach the GPU copy performance.
+This is due to shared memory bank conflicts, resulting from multiple
+threads accessing the same bank, because columns k and k+32 lie in the
+same bank.
+
+This issue can be bypassed by padding the shared memory arrays like this:
+```
+    __shared__ float tile[TILE_DIM][TILE_DIM+1];
+```
+With this padding, the memory access of the algorithm is coalesced and bank
+conflict free, resulting in the measured peak bandwidth.

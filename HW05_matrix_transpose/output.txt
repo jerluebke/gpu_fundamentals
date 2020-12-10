@@ -1,0 +1,15 @@
+arrays match.
+arrays match.
+arrays match.
+arrays match.
+
+
++===========+
+| TRANSPOSE |
++===========+
+
+cpu_transpose:               0.40 GB/s,   0.15 %
+gpu_copy:                  228.67 GB/s,  83.95 %
+gpu_transpose_naive:        25.57 GB/s,   9.39 %
+gpu_transpose_coalesced:   105.78 GB/s,  38.84 %
+gpu_transpose_coal_padded: 272.39 GB/s, 100.00 %

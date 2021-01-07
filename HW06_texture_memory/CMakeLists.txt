@@ -12,7 +12,7 @@ target_include_directories(texture
     PRIVATE /usr/local/cuda-10.0/samples/common/inc/
 )
 
-target_compile_options(texture PRIVATE -G -g)
+# target_compile_options(texture PRIVATE -G -g)
 
 set_target_properties(texture PROPERTIES
     CMAKE_C_STANDARD 99

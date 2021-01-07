@@ -166,7 +166,7 @@ __global__ void matmul_shared_kernel(float *dA, float *dB, float *dC,
 
 __global__ void matmul_texture_kernel(
         float *dC, cudaTextureObject_t texA, cudaTextureObject_t texB,
-        const int M, const int N, const int P, const int tile_dim)
+        const int M, const int N, const int P)
 {
     int i = blockIdx.y * blockDim.y + threadIdx.y;
     int j = blockIdx.x * blockDim.x + threadIdx.x;
@@ -312,7 +312,7 @@ void do_matmul_shared(const int tile_dim, bool compare = true)
 
 
 cudaTextureObject_t create_matrix_texture(
-        cudaArray *cuarr, int width, int height)
+        cudaArray *cuarr)
 {
     struct cudaResourceDesc resDesc;
     memset(&resDesc, 0, sizeof(resDesc));
@@ -348,8 +348,7 @@ void do_transpose_texture(const int block_dim, bool compare = true)
 
     init_data(hIn, MATRIX_WIDTH * MATRIX_HEIGHT);
     cudaMemcpyToArray(cuarrIn, 0, 0, hIn, size, cudaMemcpyHostToDevice);
-    cudaTextureObject_t texIn = create_matrix_texture(
-            cuarrIn, MATRIX_WIDTH, MATRIX_HEIGHT);
+    cudaTextureObject_t texIn = create_matrix_texture(cuarrIn);
 
     dim3 block(block_dim, block_dim);
     dim3 grid(MATRIX_WIDTH / block_dim + 1, MATRIX_HEIGHT / block_dim + 1);
@@ -394,16 +393,14 @@ void do_matmul_texture(const int block_dim, bool compare = true)
     cudaMemcpyToArray(cuarrA, 0, 0, hA, size, cudaMemcpyHostToDevice);
     cudaMemcpyToArray(cuarrB, 0, 0, hB, size, cudaMemcpyHostToDevice);
 
-    cudaTextureObject_t texA = create_matrix_texture(
-            cuarrA, MATRIX_WIDTH, MATRIX_HEIGHT);
-    cudaTextureObject_t texB = create_matrix_texture(
-            cuarrB, MATRIX_WIDTH, MATRIX_HEIGHT);
+    cudaTextureObject_t texA = create_matrix_texture(cuarrA);
+    cudaTextureObject_t texB = create_matrix_texture(cuarrB);
 
 
     dim3 block(block_dim, block_dim);
     dim3 grid(MATRIX_WIDTH / block_dim + 1, MATRIX_HEIGHT / block_dim + 1);
     matmul_texture_kernel<<<grid, block>>>(dC, texA, texB,
-            MATRIX_WIDTH, MATRIX_WIDTH, MATRIX_WIDTH, block_dim);
+            MATRIX_WIDTH, MATRIX_WIDTH, MATRIX_WIDTH);
     checkCudaErrors(cudaGetLastError());
     checkCudaErrors(cudaDeviceSynchronize());
 

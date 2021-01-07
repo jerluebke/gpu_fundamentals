@@ -1,0 +1,30 @@
++===================+
+| TEXTURE vs SHARED |
++===================+
+
+Verifying correctness for block sizes 4, 8, 16...
+transpose shared: arrays match.
+transpose shared: arrays match.
+transpose shared: arrays match.
+
+transpose texture: arrays match.
+transpose texture: arrays match.
+transpose texture: arrays match.
+
+matmul shared: arrays match.
+matmul shared: arrays match.
+matmul shared: arrays match.
+
+matmul texture: arrays match.
+matmul texture: arrays match.
+matmul texture: arrays match.
+
+(results: shared bandwidth, texture bandwidth, gain factor)
+transpose (4): 0.360 GB/s, 0.362 GB/s, 0.995
+transpose (8): 0.379 GB/s, 0.375 GB/s, 1.009
+transpose (16): 0.370 GB/s, 0.376 GB/s, 0.984
+matmul (4): 0.063 GB/s, 0.091 GB/s, 0.696
+matmul (8): 0.133 GB/s, 0.132 GB/s, 1.004
+matmul (16): 0.144 GB/s, 0.136 GB/s, 1.061
++===================+
+

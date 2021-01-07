@@ -1,0 +1,15 @@
+Notes
+-----
+
+The program texture compares the effective memory bandwidth of shared and
+texture memory for matrix transposition and multiplication. The benchmark
+considered setup procedures such as allocation of shared memory and creation of
+texture handles.
+
+The previous homeworks showed, that shared memory easiy outperforms naive use
+of global memory, since it is not subjected to the limited bandwidth of the
+latter. However read-only textures provide a way to utilize global memory with
+a performance which is en par with the shared memory algorithms, except for
+matrix multiplication with small thread blocks, where doing many allocations of
+small areas of memory in parallel is an advantage for the shared memory
+algorithm.

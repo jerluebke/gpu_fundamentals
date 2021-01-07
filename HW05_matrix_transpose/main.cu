@@ -1,7 +1,7 @@
 /**
  * \file main.cu
  * \brief HW05, matrix transposition
- * \author Jeremiah Lübe
+ * \author Jeremiah Lübke
  * \date 09.12.2020
  * \copyright MIT License
  */

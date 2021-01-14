@@ -12,7 +12,7 @@ target_include_directories(reduction
     PRIVATE /usr/local/cuda-10.0/samples/common/inc/
 )
 
-# target_compile_options(transpose PRIVATE -G -g)
+# target_compile_options(reduction PRIVATE -G -g)
 
 set_target_properties(reduction PROPERTIES
     CMAKE_C_STANDARD 99

@@ -111,7 +111,7 @@ void reduce_sum_cpu(float *odata, float *idata, size_t size)
 
 __global__ void reduce_sum_global_kernel(float *odata, float *idata, size_t size)
 {
-    for ( size_t i = blockIdx.x * gridDim.x + threadIdx.x;
+    for ( size_t i = blockIdx.x * blockDim.x + threadIdx.x;
             i < size;
             i += blockDim.x * gridDim.x ) {
         atomicAdd(odata, idata[i]);
@@ -119,39 +119,54 @@ __global__ void reduce_sum_global_kernel(float *odata, float *idata, size_t size
 }
 
 
-#define ILP 8
+#define ILP 32
 __global__ void reduce_sum_shared_kernel(float *odata, float *idata, size_t size)
 {
-    __shared__ float bsum[1];
-    size_t bi = ILP * blockIdx.x * gridDim.x;
-    size_t ti = ILP * threadIdx.x;
+    __shared__ float bsum;
+    if ( threadIdx.x == 0 )
+        bsum = 0.0;
 
     // sub-reduction on thread-level with ILP
     float tsum = 0.0;
-    for ( size_t i = 0; i < ILP; ++i ) {
-        if ( ti + bi + i > size )
-            break;
-        tsum += idata[ti + bi + i];
+    float tsums[ILP];
+
+    #pragma unroll
+    for ( size_t i = 0; i < ILP; ++i )
+        tsums[i] = 0.0;
+
+    for ( size_t ti = blockIdx.x * blockDim.x + threadIdx.x;
+            ti < size;
+            ti += ILP * blockDim.x * gridDim.x ) {
+        #pragma unroll
+        for ( size_t i = 0; i < ILP; ++i )
+            if ( ti + i * blockDim.x * gridDim.x < size )
+                tsums[i] += idata[ti + i * blockDim.x * gridDim.x];
     }
 
+    #pragma unroll
+    for ( size_t i = 0; i < ILP; ++i )
+        tsum += tsums[i];
+    
     __syncthreads();
 
     // sub-reduction on block-level
-    atomicAdd(bsum, tsum);
+    atomicAdd(&bsum, tsum);
 
     __syncthreads();
 
     // final reduction on grid-level in global memory
-    if ( ti == 0 )
-        atomicAdd(odata, bsum[0]);
+    if ( threadIdx.x == 0 )
+        atomicAdd(odata, bsum);
 }
 
 
 /*****************************************************************************/
 
 
-#define SIZE (1 << 20)
-void test_reduction(int block_size)
+#define SIZE (1 << 25)
+void test_reduction(int block_size,
+                    timing_result_t *tg, timing_result_t *tc,
+                    size_t timing_runs, bool compare = true)
 {
     const int number_of_floats = SIZE / sizeof(float);
 
@@ -166,28 +181,47 @@ void test_reduction(int block_size)
     *hSum = zero;
     cudaMemcpy(dData, hData, SIZE, cudaMemcpyHostToDevice);
 
-    int grid_size = number_of_floats / block_size + 1;
-    reduce_sum_cpu(hSum, hData, number_of_floats);
+    int grid_size = 1<<7;
 
     cudaMemcpy(dSum, &zero, sizeof(float), cudaMemcpyHostToDevice);
-    reduce_sum_global_kernel<<<grid_size, block_size>>>(dSum, dData, number_of_floats);
+    #define COMMA ,
+    TIMEIT(timing_runs, tg,
+        reduce_sum_global_kernel<<<grid_size COMMA block_size>>>(
+            dSum, dData, number_of_floats);)
     checkCudaErrors(cudaGetLastError());
     checkCudaErrors(cudaDeviceSynchronize());
-    cudaMemcpy(refSum, dSum, sizeof(float), cudaMemcpyDeviceToHost);
-    if ( *hSum == *refSum )
-        printf("results match.\n");
-    else
-        printf("results do not match: %f != %f\n", *hSum, *refSum);
 
+    if ( compare ) {
+        reduce_sum_cpu(hSum, hData, number_of_floats);
+        cudaMemcpy(refSum, dSum, sizeof(float), cudaMemcpyDeviceToHost);
+        if ( abs(*hSum - *refSum) < number_of_floats )
+            printf("results match.\n");
+        else
+            printf("results do not match: %f != %f\n", *hSum, *refSum);
+    }
+
+    // grid_size = (number_of_floats / block_size) / ILP ;
     cudaMemcpy(dSum, &zero, sizeof(float), cudaMemcpyHostToDevice);
-    reduce_sum_shared_kernel<<<grid_size, block_size>>>(dSum, dData, number_of_floats);
+    TIMEIT(timing_runs, tc,
+        reduce_sum_shared_kernel<<<grid_size COMMA block_size>>>(
+            dSum, dData, number_of_floats);)
     checkCudaErrors(cudaGetLastError());
     checkCudaErrors(cudaDeviceSynchronize());
-    cudaMemcpy(refSum, dSum, sizeof(float), cudaMemcpyDeviceToHost);
-    if ( *hSum == *refSum )
-        printf("results match.\n");
-    else
-        printf("results do not match: %f != %f\n", *hSum, *refSum);
+    #undef COMMA
+
+    if ( compare ) {
+        cudaMemcpy(refSum, dSum, sizeof(float), cudaMemcpyDeviceToHost);
+        if ( abs(*hSum - *refSum) < number_of_floats )
+            printf("results match.\n");
+        else
+            printf("results do not match: %f != %f\n", *hSum, *refSum);
+    }
+
+    cudaFree(dData);
+    cudaFree(dSum);
+    free(hData);
+    free(hSum);
+    free(refSum);
 }
 
 
@@ -198,20 +232,34 @@ void test_reduction(int block_size)
 const char* HEADER = "+===============+\n"
                      "| SUM REDUCTION |\n"
                      "+===============+\n";
-// const char* RESULT = "%s (%d): %5.3f GB/s, %5.3f GB/s, %5.3f\n";
-const char* END = "+===============+\n";
+const char* START = "\nRESULTS: global atomicAdd, cascade on shared mem, gain";
+const char* RESULT = "block size %d: %7.5fs, %7.5fs, %5.3f\n";
+const char* END = "\n+===============+\n";
 
 
 int main()
 {
     srand(time(NULL));
-    const int num_block_sizes = 4;
-    int block_sizes[num_block_sizes] = { 64, 128, 256, 512 };
-    // timing_result_t shared_time, texture_time;
+    const int num_block_sizes = 7;
+    int block_sizes[num_block_sizes] = { 16, 32, 64, 128, 256, 512, 1024 };
+    timing_result_t timing_result_global, timing_result_cascade;
 
     puts(HEADER);
-    for ( int i = 0; i < num_block_sizes; ++i )
-        test_reduction(block_sizes[i]);
+    for ( int i = 0; i < num_block_sizes; ++i ) {
+        test_reduction(block_sizes[i], NULL, NULL, 1);
+    }
+
+    puts(START);
+
+    for ( int i = 0; i < num_block_sizes; ++i ) {
+        test_reduction(block_sizes[i],
+                       &timing_result_global,
+                       &timing_result_cascade,
+                       100, false);
+        float tg = timing_result_global.t_mean;
+        float tc = timing_result_cascade.t_mean;
+        printf(RESULT, block_sizes[i], tg, tc, tc / tg);
+    }
     puts(END);
 }
 

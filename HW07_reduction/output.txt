@@ -1,0 +1,30 @@
++===============+
+| SUM REDUCTION |
++===============+
+
+results match.
+results match.
+results match.
+results match.
+results match.
+results match.
+results match.
+results match.
+results match.
+results match.
+results match.
+results match.
+results match.
+results match.
+
+RESULTS: global atomicAdd, cascade on shared mem, gain
+block size 16: 0.00339s, 0.00397s, 1.171
+block size 32: 0.00406s, 0.00346s, 0.852
+block size 64: 0.00359s, 0.00352s, 0.981
+block size 128: 0.00357s, 0.00328s, 0.919
+block size 256: 0.00348s, 0.00368s, 1.057
+block size 512: 0.00342s, 0.00329s, 0.962
+block size 1024: 0.00295s, 0.00353s, 1.197
+
++===============+
+

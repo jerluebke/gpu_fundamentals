@@ -1,0 +1,18 @@
+Notes
+-----
+
+The program reduction implements two sum-reduction algorithms: a naive version
+which uses atomicAdd on a single variable in global memory and a cascade
+version which performs sub-reductions on thread- and block-level before
+computing the final result on grid-level. As usual, the output of both verions
+is compared with a naive CPU algorithm to ensure correctness.
+
+Interestingly, the cascade algorithm does not yield a clear performance gain.
+Only for 32 threads per block is a factor of 0.85 achieved, for all other
+configurations it is close to 1.
+
+This result is unexpected at first, because with the global algorithm all
+threads attempt to access the same variable through an atomic operation, which
+results in queueing and thus denies efficient parallelism. On the other hand,
+the cascade algorithm might still suffer from bottlenecks such as shared memory
+bank conflicts, which could negate the expected algorithmic advantages.

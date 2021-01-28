@@ -64,7 +64,8 @@ typedef struct timing_result_s {
 }
 
 
-bool check_results(int* host_ref, int* gpu_ref, const int n)
+bool check_results(int* host_ref, int* gpu_ref, const int n,
+        bool print_status = true)
 {
     for ( int i = 0; i < n; ++i ) {
         if ( host_ref[i] != gpu_ref[i] ) {
@@ -74,27 +75,25 @@ bool check_results(int* host_ref, int* gpu_ref, const int n)
             return false;
         }
     }
-    printf("arrays match.\n");
+    if ( print_status )
+        printf("arrays match.\n");
     return true;
 }
 
 
-void init_data(int* ip, size_t size, int *fill_value = NULL)
+void init_data(int* ip, size_t size)
 {
-    if ( fill_value != NULL )
-        for ( size_t i = 0; i < size; ++i )
-            ip[i] = (rand() & 0xFF) / 10;
-    else
-        for ( size_t i = 0; i < size; ++i )
-            ip[i] = *fill_value;
+    for ( size_t i = 0; i < size; ++i )
+        ip[i] = (int)(rand() & 0xFF) / 10;
 }
 
 
 /*****************************************************************************/
 
 
-#define BLOCK_SIZE 64
-#define SECTION_SIZE 64
+#define BLOCK_SIZE 1024
+#define CPU_TIMING_RUNS 100
+#define GPU_TIMING_RUNS 1000
 
 
 void scan_cpu(int *out, int *in, int length)
@@ -105,9 +104,10 @@ void scan_cpu(int *out, int *in, int length)
 }
 
 
-__global__ void scan_gpu_block_level(int *out, int *in, int length)
+__global__ void scan_gpu_block_level(int *out, int *in, int *block_tmp,
+                                     int length)
 {
-    __shared__ int smem[SECTION_SIZE];
+    __shared__ int smem[BLOCK_SIZE];
 
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int thid = threadIdx.x;
@@ -121,7 +121,7 @@ __global__ void scan_gpu_block_level(int *out, int *in, int length)
             smem[idx] += smem[idx - stride];
     }
 
-    for ( unsigned stride = SECTION_SIZE / 4; stride > 0; stride /= 2 ) {
+    for ( unsigned stride = BLOCK_SIZE / 4; stride > 0; stride /= 2 ) {
         __syncthreads();
         unsigned idx = (thid + 1) * 2 * stride - 1;
         if ( idx + stride < BLOCK_SIZE )
@@ -132,69 +132,71 @@ __global__ void scan_gpu_block_level(int *out, int *in, int length)
 
     if ( i < length )
         out[i] = smem[thid];
+
+    if ( thid == 0 )
+        block_tmp[blockIdx.x] = smem[BLOCK_SIZE-1];
 }
 
 
 __global__ void scan_gpu_grid_level(int *out, int *block_tmp, int length)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
-    int end = blockIdx.x * blockDim.x + SECTION_SIZE - 1;
-    int thid = threadIdx.x;
-
-    if ( thid == 0 ) {
-        for ( unsigned block = blockIdx.x+1; block < gridDim.x; ++block ) {
-            atomicAdd(&block_tmp[block], out[end]);
-        }
-    }
-
-    __syncthreads();
-
-    if ( i <  length )
-        out[i] += block_tmp[blockIdx.x];
+    if ( i < length && blockIdx.x > 0 )
+        out[i] += block_tmp[blockIdx.x-1];
 }
 
 
 /*****************************************************************************/
 
 
-void test_scan(int data_size)
+void test_scan(int data_size, timing_result_t *cpu_time,
+               timing_result_t *gpu_time)
 {
     int size = data_size * sizeof(int);
-    int grid_size = data_size / BLOCK_SIZE + 1;
+    int grid_size = ceil(data_size / (float)BLOCK_SIZE);
 
-    int *h_in, *h_out, *h_ref, *h_tmp, *d_in, *d_out, *d_tmp;
+    int *h_in, *h_out, *h_ref, *d_in, *d_out, *d_tmp_1, *d_tmp_2;
     h_in = (int*)malloc(size);
     h_out = (int*)malloc(size);
     h_ref = (int*)malloc(size);
-    h_tmp = (int*)malloc(grid_size*sizeof(int));
     cudaMalloc((void**)&d_in, size);
     cudaMalloc((void**)&d_out, size);
-    cudaMalloc((void**)&d_tmp, grid_size*sizeof(int));
+    cudaMalloc((void**)&d_tmp_1, (size+1) / BLOCK_SIZE);
+    cudaMalloc((void**)&d_tmp_2, 4);
 
     init_data(h_in, data_size);
-    init_data(h_tmp,  grid_size, 0);
     cudaMemcpy(d_in, h_in, size, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_tmp, h_tmp, grid_size*sizeof(int), cudaMemcpyHostToDevice);
 
-    scan_cpu(h_out, h_in, data_size);
+    TIMEIT(CPU_TIMING_RUNS, cpu_time, scan_cpu(h_out, h_in, data_size);)
 
-    scan_gpu_block_level<<<grid_size, BLOCK_SIZE>>>(d_out, d_in, data_size);
-    checkCudaErrors(cudaGetLastError());
-    checkCudaErrors(cudaDeviceSynchronize());
-    scan_gpu_grid_level<<<grid_size, BLOCK_SIZE>>>(d_out, d_tmp, data_size);
-    checkCudaErrors(cudaGetLastError());
-    checkCudaErrors(cudaDeviceSynchronize());
+    #define COMMA ,
+    #define CUDA_ERROR_CHECKS \
+        checkCudaErrors(cudaGetLastError()); \
+        checkCudaErrors(cudaDeviceSynchronize());
+    TIMEIT(GPU_TIMING_RUNS, gpu_time,
+        scan_gpu_block_level<<<grid_size COMMA BLOCK_SIZE>>>(
+                d_out, d_in, d_tmp_1, data_size);
+        CUDA_ERROR_CHECKS
+        scan_gpu_block_level<<<1 COMMA BLOCK_SIZE>>>(
+                d_tmp_1, d_tmp_1, d_tmp_2, data_size / BLOCK_SIZE);
+        CUDA_ERROR_CHECKS
+        scan_gpu_grid_level<<<grid_size COMMA BLOCK_SIZE>>>(
+                d_out, d_tmp_1, data_size);
+        CUDA_ERROR_CHECKS
+    )
+    #undef COMMA
+    #undef CUDA_ERROR_CHECKS
 
     cudaMemcpy(h_ref, d_out, size, cudaMemcpyDeviceToHost);
-    check_results(h_out, h_ref, data_size);
+    check_results(h_out, h_ref, data_size, false);
 
     cudaFree(d_in);
     cudaFree(d_out);
-    cudaFree(d_tmp);
+    cudaFree(d_tmp_1);
+    cudaFree(d_tmp_2);
     free(h_in);
     free(h_out);
     free(h_ref);
-    free(h_tmp);
 }
 
 
@@ -205,8 +207,11 @@ void test_scan(int data_size)
 const char* HEADER = "+==========+\n"
                      "| SCANNING |\n"
                      "+==========+\n";
-// const char* RESULT = "%s (%d): %5.3f GB/s, %5.3f GB/s, %5.3f\n";
-const char* END = "+===============+\n";
+const char* RESULT_HEADER = "+---------+-------+-------+---------+\n" \
+                            "| length  | cpu   | gpu   | speedup |\n" \
+                            "+---------+-------+-------+---------+";
+const char* RESULT = "| %7d | %5.3f | %5.3f | %5.3f   |\n";
+const char* END = "+---------+-------+-------+---------+";
 
 
 int main()
@@ -215,10 +220,15 @@ int main()
     const int max_data_size = 1000000;
     const int data_size_step = 100000;
     int data_size = 100000;
+    timing_result_t cpu_time, gpu_time;
 
     puts(HEADER);
-    for ( ; data_size <= max_data_size; data_size += data_size_step )
-        test_scan(data_size);
+    puts(RESULT_HEADER);
+    for ( ; data_size <= max_data_size; data_size += data_size_step ) {
+        test_scan(data_size, &cpu_time, &gpu_time);
+        printf(RESULT, data_size, cpu_time.t_mean, gpu_time.t_mean,
+               cpu_time.t_mean / gpu_time.t_mean);
+    }
     puts(END);
 }
 

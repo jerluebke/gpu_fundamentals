@@ -12,7 +12,7 @@ target_include_directories(scan
     PRIVATE /usr/local/cuda-10.0/samples/common/inc/
 )
 
-target_compile_options(scan PRIVATE -G -g)
+# target_compile_options(scan PRIVATE -G -g)
 
 set_target_properties(scan PROPERTIES
     CMAKE_C_STANDARD 99
